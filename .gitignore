@@ -8,5 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
-img/
 debug_roi
+debug_chars
+debug_yolo
