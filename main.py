@@ -9,15 +9,17 @@ from ROI import ROI
 
 
 INPUT_PATH = "img"
-DEBUG_DIR = "debug_roi"
+DEBUG_DIR = "debug_plate"
 CHAR_DIR = "debug_chars"
 YOLO_OUTPUT_DIR = "debug_yolo"
-USE_MODEL = False
+USE_MODEL = True
 MODEL_PATH = "best.pt"
 CONF = 0.25
 IMGSZ = 640
 IOU = 0.45
 SHOW_IMAGE = False
+
+ANS_PATH = "411285041.txt"
 
 
 def get_image_paths(input_path):
@@ -102,6 +104,11 @@ def process_image(
             f"{filename}: box={plate_box}, candidates=0, method={method}, chars={char_count}, "
             f"char_boxes={char_boxes_original}"
         )
+    with open(ANS_PATH, 'a') as f:
+        f.write(f"{filename}\n")
+        f.write(f"{char_count}\n")
+        for box in char_boxes_original:
+            f.write(f"{list(box)}\n")
 
     if show_image:
         cv2.imshow("plate roi", plate_roi)
@@ -116,6 +123,9 @@ def main():
     yolo_output_dir = YOLO_OUTPUT_DIR
     use_model = USE_MODEL
     show_image = SHOW_IMAGE
+    
+    with open(ANS_PATH, 'w') as f :
+        pass
 
     image_paths = get_image_paths(input_path)
     if not image_paths:

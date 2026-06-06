@@ -22,13 +22,13 @@ class PlateDetector:
         image_area = width * height
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        gray_eq = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+        gray_eq = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray) #直方圖等化
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
         white_mask = cv2.inRange(
             hsv,
-            np.array([0, 0, 85]),
-            np.array([180, 115, 255]),
+            np.array([0, 0, 85]), #lower
+            np.array([180, 115, 255]), #upper
         )
 
         sobel_x = cv2.Sobel(gray_eq, cv2.CV_64F, 1, 0, ksize=3)
@@ -43,16 +43,16 @@ class PlateDetector:
 
         combined = cv2.bitwise_and(white_mask, edge_mask)
 
-        edge_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (19, 5))
-        edge_morph = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, edge_kernel, iterations=2)
+        edge_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (19, 5)) # 19x5的SE
+        edge_morph = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, edge_kernel, iterations=2) #close
         edge_morph = cv2.morphologyEx(
             edge_morph,
             cv2.MORPH_OPEN,
             cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)),
             iterations=1,
-        )
+        ) #open
 
-        plate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (23, 7))
+        plate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (23, 7)) # 23x7的SE
         white_morph = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, plate_kernel, iterations=2)
         white_morph = cv2.morphologyEx(
             white_morph,
@@ -68,9 +68,9 @@ class PlateDetector:
         candidates = []
         for candidate in self._dedupe_candidates(raw_candidates):
             x, y, w, h = candidate["box"]
-            area = w * h
-            aspect = w / float(h + 1e-6)
-            area_ratio = area / image_area
+            area = w * h #車牌候選面積
+            aspect = w / float(h + 1e-6) #車牌候選寬長比例
+            area_ratio = area / image_area 
             center_y = (y + h * 0.5) / height
 
             if not (1.60 <= aspect <= 5.8):
@@ -91,7 +91,7 @@ class PlateDetector:
             white_ratio = float(np.mean(roi_white > 0))
             dark_ratio = float(np.mean(roi_gray < 105))
             edge_density = float(np.mean(roi_edges > 0))
-            fill_ratio = candidate["contour_area"] / float(area + 1e-6)
+            fill_ratio = candidate["contour_area"] / float(area + 1e-6) # 輪廓實際面積佔外接矩形面積的比例
 
             if white_ratio < 0.14:
                 continue
@@ -172,7 +172,7 @@ class PlateDetector:
         return plate_roi, plate_box, candidates
 
     def _collect_candidates(self, mask, source_name, min_area=250):
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) #找外圍框
 
         candidates = []
         for contour in contours:
