@@ -13,6 +13,7 @@ DEBUG_DIR = "debug_plate"
 CHAR_DIR = "debug_chars"
 YOLO_OUTPUT_DIR = "debug_yolo"
 USE_MODEL = True
+DEBUG = False
 MODEL_PATH = "best.pt"
 CONF = 0.25
 IMGSZ = 640
@@ -42,6 +43,7 @@ def process_image(
     char_dir,
     yolo_output_dir,
     use_model=True,
+    debug=False,
     show_image=False,
 ):
     filename = os.path.splitext(os.path.basename(image_path))[0]
@@ -52,7 +54,7 @@ def process_image(
 
     plate_roi, plate_box, candidates = detector.detect(
         image_path,
-        debug=True,
+        debug=debug,
         save_dir=debug_dir,
     )
 
@@ -66,51 +68,54 @@ def process_image(
             plate_roi,
             offset=(plate_box[0], plate_box[1]),
         )
-        yolo_predictor.save_debug(
-            input_img,
-            detections,
-            yolo_output_dir,
-            filename,
-        )
+        if debug:
+            yolo_predictor.save_debug(
+                input_img,
+                detections,
+                yolo_output_dir,
+                filename,
+            )
         char_count = len(detections)
         char_boxes_original = format_char_boxes(detections)
         method = "model"
     else:
         chars, char_boxes_roi, _ = roi_processor.segment(
             plate_roi,
-            debug=True,
+            debug=debug,
             save_dir=char_dir,
             basename=filename,
         )
         char_boxes_original = roi_processor.boxes_to_original(char_boxes_roi, plate_box)
-        roi_processor.save_original_debug(
-            input_img,
-            char_boxes_original,
-            char_dir,
-            filename,
-        )
+        if debug:
+            roi_processor.save_original_debug(
+                input_img,
+                char_boxes_original,
+                char_dir,
+                filename,
+            )
         char_count = len(chars)
         method = "ROI"
 
-    if candidates:
-        best = candidates[0]
-        print(
-            f"{filename}: box={plate_box}, candidates={len(candidates)}, "
-            f"score={best['score']:.2f}, source={best['source']}, method={method}, chars={char_count}, "
-            f"char_boxes={char_boxes_original}"
-        )
-    else:
-        print(
-            f"{filename}: box={plate_box}, candidates=0, method={method}, chars={char_count}, "
-            f"char_boxes={char_boxes_original}"
-        )
+    if debug:
+        if candidates:
+            best = candidates[0]
+            print(
+                f"{filename}: box={plate_box}, candidates={len(candidates)}, "
+                f"score={best['score']:.2f}, source={best['source']}, method={method}, chars={char_count}, "
+                f"char_boxes={char_boxes_original}"
+            )
+        else:
+            print(
+                f"{filename}: box={plate_box}, candidates=0, method={method}, chars={char_count}, "
+                f"char_boxes={char_boxes_original}"
+            )
     with open(ANS_PATH, 'a') as f:
         f.write(f"{filename}\n")
         f.write(f"{char_count}\n")
         for box in char_boxes_original:
             f.write(f"{list(box)}\n")
 
-    if show_image:
+    if debug and show_image:
         cv2.imshow("plate roi", plate_roi)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
@@ -122,6 +127,7 @@ def main():
     char_dir = CHAR_DIR
     yolo_output_dir = YOLO_OUTPUT_DIR
     use_model = USE_MODEL
+    debug = DEBUG
     show_image = SHOW_IMAGE
     
     with open(ANS_PATH, 'w') as f :
@@ -153,6 +159,7 @@ def main():
             char_dir,
             yolo_output_dir,
             use_model=use_model,
+            debug=debug,
             show_image=show_image,
         )
 

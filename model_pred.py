@@ -37,7 +37,9 @@ class YoloCharPredictor:
             iou=self.iou if iou is None else iou,
             agnostic_nms=True,
             verbose=False,
+            device=0,
         )
+        
         if not results:
             return []
 
