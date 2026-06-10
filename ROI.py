@@ -145,23 +145,18 @@ class ROI:
         os.makedirs(output_dir, exist_ok=True)
 
         debug_img = image.copy()
-        csv_path = os.path.join(output_dir, "char_boxes.csv")
-
-        with open(csv_path, "w", encoding="utf-8") as file:
-            file.write("index,x,y,w,h\n")
-            for idx, (x, y, w, h) in enumerate(char_boxes, start=1):
-                file.write(f"{idx},{x},{y},{w},{h}\n")
-                cv2.rectangle(debug_img, (x, y), (x + w, y + h), (0, 255, 255), 2)
-                cv2.putText(
-                    debug_img,
-                    str(idx),
-                    (x, max(15, y - 5)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (0, 0, 255),
-                    2,
-                    cv2.LINE_AA,
-                )
+        for idx, (x, y, w, h) in enumerate(char_boxes, start=1):
+            cv2.rectangle(debug_img, (x, y), (x + w, y + h), (0, 255, 255), 2)
+            cv2.putText(
+                debug_img,
+                str(idx),
+                (x, max(15, y - 5)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 0, 255),
+                2,
+                cv2.LINE_AA,
+            )
 
         cv2.imwrite(os.path.join(output_dir, "original_char_boxes.jpg"), debug_img)
 
@@ -347,10 +342,6 @@ class ROI:
         cv2.imwrite(os.path.join(output_dir, "plate_surface.jpg"), plate_surface)
         cv2.imwrite(os.path.join(output_dir, "binary.jpg"), binary)
         cv2.imwrite(os.path.join(output_dir, "segmented.jpg"), debug_img)
-        with open(os.path.join(output_dir, "char_boxes_roi.csv"), "w", encoding="utf-8") as file:
-            file.write("index,x,y,w,h\n")
-            for idx, (x, y, w, h) in enumerate(roi_boxes, start=1):
-                file.write(f"{idx},{x},{y},{w},{h}\n")
         for idx, char in enumerate(char_images, start=1):
             cv2.imwrite(os.path.join(output_dir, f"char_{idx:02d}.jpg"), char)
 

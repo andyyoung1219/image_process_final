@@ -99,28 +99,22 @@ class YoloCharPredictor:
         os.makedirs(save_dir, exist_ok=True)
 
         debug_img = image.copy()
-        csv_path = os.path.join(save_dir, f"{basename}_char_boxes.csv")
+        for detection in detections:
+            index = detection["index"]
+            label = detection["label"]
+            x, y, w, h = detection["bbox"]
 
-        with open(csv_path, "w", encoding="utf-8") as file:
-            file.write("index,label,confidence,x,y,w,h\n")
-            for detection in detections:
-                index = detection["index"]
-                label = detection["label"]
-                confidence = detection["confidence"]
-                x, y, w, h = detection["bbox"]
-
-                file.write(f"{index},{label},{confidence:.6f},{x},{y},{w},{h}\n")
-                cv2.rectangle(debug_img, (x, y), (x + w, y + h), (0, 255, 255), 2)
-                cv2.putText(
-                    debug_img,
-                    f"{index}:{label}",
-                    (x, max(15, y - 5)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.55,
-                    (0, 0, 255),
-                    2,
-                    cv2.LINE_AA,
-                )
+            cv2.rectangle(debug_img, (x, y), (x + w, y + h), (0, 255, 255), 2)
+            cv2.putText(
+                debug_img,
+                f"{index}:{label}",
+                (x, max(15, y - 5)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 0, 255),
+                2,
+                cv2.LINE_AA,
+            )
 
         cv2.imwrite(os.path.join(save_dir, f"{basename}_pred.jpg"), debug_img)
 
@@ -173,4 +167,3 @@ def get_image_paths(input_path):
 
 def format_char_boxes(detections):
     return [detection["bbox"] for detection in detections]
-
