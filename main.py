@@ -9,12 +9,12 @@ from model_pred_plate import YoloPlatePredictor
 from ROI import ROI
 
 
-INPUT_PATH = "img"
+INPUT_PATH = "6"
 DEBUG_DIR = "debug_plate"
 CHAR_DIR = "debug_chars"
 YOLO_OUTPUT_DIR = "debug_yolo"
-USE_MODEL_PLATE = True
-USE_MODEL = True
+USE_MODEL_PLATE = False
+USE_MODEL = False
 DEBUG = False
 MODEL_PATH = "best.pt"
 MODEL_PLATE_PATH = "best_lin.pt"
@@ -23,7 +23,7 @@ IMGSZ = 640
 IOU = 0.45
 SHOW_IMAGE = False
 
-ANS_PATH = "411285041.txt"
+ANS_PATH = "411285041_process_char.txt"
 
 
 def get_image_paths(input_path):

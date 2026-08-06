@@ -30,6 +30,11 @@ class PlateDetector:
             np.array([0, 0, 85]), #lower
             np.array([180, 115, 255]), #upper
         )
+        green_mask = cv2.inRange(
+            hsv,
+            np.array([55, 15, 15]),
+            np.array([130, 210, 240]),
+        )
 
         sobel_x = cv2.Sobel(gray_eq, cv2.CV_64F, 1, 0, ksize=3)
         sobel_x = np.absolute(sobel_x)
@@ -52,6 +57,32 @@ class PlateDetector:
             iterations=1,
         ) #open
 
+        green_edges = cv2.bitwise_and(green_mask, edge_mask)
+        green_edge_morph = cv2.morphologyEx(
+            green_edges,
+            cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (13, 5)),
+            iterations=1,
+        )
+        green_edge_morph = cv2.morphologyEx(
+            green_edge_morph,
+            cv2.MORPH_OPEN,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)),
+            iterations=1,
+        )
+        green_edge_morph_wide = cv2.morphologyEx(
+            green_edges,
+            cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (23, 7)),
+            iterations=1,
+        )
+        green_edge_morph_wide = cv2.morphologyEx(
+            green_edge_morph_wide,
+            cv2.MORPH_OPEN,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)),
+            iterations=1,
+        )
+
         plate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (23, 7)) # 23x7的SE
         white_morph = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, plate_kernel, iterations=2)
         white_morph = cv2.morphologyEx(
@@ -64,6 +95,8 @@ class PlateDetector:
         raw_candidates = []
         raw_candidates.extend(self._collect_candidates(edge_morph, "edge"))
         raw_candidates.extend(self._collect_candidates(white_morph, "white"))
+        raw_candidates.extend(self._collect_candidates(green_edge_morph, "green_edge"))
+        raw_candidates.extend(self._collect_candidates(green_edge_morph_wide, "green_edge"))
 
         candidates = []
         for candidate in self._dedupe_candidates(raw_candidates):
@@ -81,23 +114,31 @@ class PlateDetector:
                 continue
             if not (0.001 <= area_ratio <= 0.06):
                 continue
-            if y < height * 0.04:
+            if y < height * 0.12:
                 continue
 
             roi_gray = gray[y : y + h, x : x + w]
             roi_white = white_mask[y : y + h, x : x + w]
+            roi_green = green_mask[y : y + h, x : x + w]
             roi_edges = edge_mask[y : y + h, x : x + w]
 
             white_ratio = float(np.mean(roi_white > 0))
+            green_ratio = float(np.mean(roi_green > 0))
             dark_ratio = float(np.mean(roi_gray < 105))
             edge_density = float(np.mean(roi_edges > 0))
             fill_ratio = candidate["contour_area"] / float(area + 1e-6) # 輪廓實際面積佔外接矩形面積的比例
 
-            if white_ratio < 0.14:
+            green_source = candidate["source"] == "green_edge"
+            strong_green_box = green_ratio >= 0.45 and fill_ratio >= 0.45 and edge_density >= 0.16
+            green_like = (green_source and green_ratio >= 0.20) or strong_green_box
+            if white_ratio < 0.14 and not green_like:
                 continue
-            if not (0.04 <= dark_ratio <= 0.70):
+            max_dark_ratio = 0.90 if green_like else 0.70
+            if not (0.04 <= dark_ratio <= max_dark_ratio):
                 continue
             if edge_density < 0.035:
+                continue
+            if green_source and (fill_ratio < 0.18 or edge_density < 0.10 or area_ratio > 0.025):
                 continue
 
             aspect_score = self._score_similarity(aspect, 2.35, 1.85)
@@ -119,6 +160,31 @@ class PlateDetector:
                 + (1.8 * size_score)
             ) * road_penalty * tiny_penalty
 
+            plate_type = "white"
+            if green_like:
+                green_aspect_score = self._score_similarity(aspect, 2.60, 1.10)
+                green_color_score = self._score_similarity(min(green_ratio, 0.75), 0.62, 0.55)
+                green_white_score = self._score_similarity(min(white_ratio, 0.80), 0.58, 0.50)
+                green_dark_score = self._score_similarity(dark_ratio, 0.55, 0.40)
+                green_edge_score = self._score_similarity(edge_density, 0.30, 0.25)
+                green_size_score = self._score_similarity(area_ratio, 0.0075, 0.022)
+                green_fill_score = self._score_similarity(fill_ratio, 0.52, 0.45)
+
+                green_score = (
+                    (3.0 * green_aspect_score)
+                    + (2.0 * green_color_score)
+                    + (1.5 * green_white_score)
+                    + (2.0 * green_dark_score)
+                    + (3.0 * green_edge_score)
+                    + (1.8 * green_size_score)
+                    + (1.2 * green_fill_score)
+                    + 1.2
+                ) * road_penalty
+
+                if green_score > score:
+                    score = green_score
+                    plate_type = "green"
+
             candidates.append(
                 {
                     **candidate,
@@ -126,10 +192,12 @@ class PlateDetector:
                     "aspect": aspect,
                     "area_ratio": area_ratio,
                     "white_ratio": white_ratio,
+                    "green_ratio": green_ratio,
                     "dark_ratio": dark_ratio,
                     "edge_density": edge_density,
                     "fill_ratio": fill_ratio,
                     "score": score,
+                    "plate_type": plate_type,
                 }
             )
 
@@ -162,9 +230,12 @@ class PlateDetector:
 
             basename = os.path.splitext(os.path.basename(image_path))[0]
             cv2.imwrite(os.path.join(save_dir, f"{basename}_white_mask.jpg"), white_mask)
+            cv2.imwrite(os.path.join(save_dir, f"{basename}_green_mask.jpg"), green_mask)
             cv2.imwrite(os.path.join(save_dir, f"{basename}_edge_mask.jpg"), edge_mask)
             cv2.imwrite(os.path.join(save_dir, f"{basename}_combined.jpg"), combined)
             cv2.imwrite(os.path.join(save_dir, f"{basename}_morph.jpg"), edge_morph)
+            cv2.imwrite(os.path.join(save_dir, f"{basename}_green_edge_morph.jpg"), green_edge_morph)
+            cv2.imwrite(os.path.join(save_dir, f"{basename}_green_edge_morph_wide.jpg"), green_edge_morph_wide)
             cv2.imwrite(os.path.join(save_dir, f"{basename}_white_morph.jpg"), white_morph)
             cv2.imwrite(os.path.join(save_dir, f"{basename}_detected.jpg"), debug_img)
             cv2.imwrite(os.path.join(save_dir, f"{basename}_roi.jpg"), plate_roi)

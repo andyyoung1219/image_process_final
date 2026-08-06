@@ -31,60 +31,19 @@ class ROI:
         gray = cv2.bilateralFilter(gray, 7, 35, 35)
         gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
 
-        _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        adaptive = cv2.adaptiveThreshold(
-            gray,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV,
-            31,
-            11,
-        )
-        binary = cv2.bitwise_or(otsu, adaptive)
-        binary = cv2.morphologyEx(
-            binary,
-            cv2.MORPH_OPEN,
-            cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2)),
-            iterations=1,
-        )
+        white_binary = self._build_white_plate_binary(gray)
+        green_binary = self._build_green_plate_binary(gray)
+        white_boxes = self._find_character_boxes(white_binary, resized_w, resized_h)
+        green_boxes = self._find_character_boxes(green_binary, resized_w, resized_h, is_green_plate=True)
 
-        search_x = int(resized_w * 0.04)
-        search_y = int(resized_h * 0.18)
-        search_w = max(1, int(resized_w * 0.92))
-        search_h = max(1, int(resized_h * 0.68))
-        search_binary = binary[search_y : search_y + search_h, search_x : search_x + search_w]
-
-        contours, _ = cv2.findContours(search_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        boxes = []
-        for contour in contours:
-            x, y, w, h = cv2.boundingRect(contour)
-            x += search_x
-            y += search_y
-            area = w * h
-            aspect = w / float(h + 1e-6)
-            center_y = (y + h * 0.5) / resized_h
-            fill_ratio = cv2.contourArea(contour) / float(area + 1e-6)
-
-            if not (resized_h * 0.28 <= h <= resized_h * 0.74):
-                continue
-            if not (resized_w * 0.012 <= w <= resized_w * 0.18):
-                continue
-            if not (0.06 <= aspect <= 1.10):
-                continue
-            if not (0.34 <= center_y <= 0.76):
-                continue
-            if fill_ratio < 0.12:
-                continue
-
-            boxes.append((x, y, w, h))
-
-        split_boxes = []
-        for box in sorted(boxes, key=lambda item: item[0]):
-            split_boxes.extend(self._split_wide_character_box(binary, box))
-
-        boxes = self._filter_character_artifacts(split_boxes, resized_w, resized_h)
-        boxes = self._merge_character_fragments(boxes)
-        boxes = sorted(boxes, key=lambda item: item[0])
+        white_score = self._score_character_boxes(white_boxes, resized_w, resized_h)
+        green_score = self._score_character_boxes(green_boxes, resized_w, resized_h)
+        if green_score > white_score:
+            binary = green_binary
+            boxes = green_boxes
+        else:
+            binary = white_binary
+            boxes = white_boxes
 
         if len(boxes) > 8:
             median_h = float(np.median([box[3] for box in boxes]))
@@ -159,6 +118,90 @@ class ROI:
             )
 
         cv2.imwrite(os.path.join(output_dir, "original_char_boxes.jpg"), debug_img)
+
+    def _build_white_plate_binary(self, gray):
+        _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        adaptive = cv2.adaptiveThreshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            31,
+            11,
+        )
+        binary = cv2.bitwise_or(otsu, adaptive)
+        return cv2.morphologyEx(
+            binary,
+            cv2.MORPH_OPEN,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2)),
+            iterations=1,
+        )
+
+    def _build_green_plate_binary(self, gray):
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        return cv2.morphologyEx(
+            binary,
+            cv2.MORPH_OPEN,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2)),
+            iterations=1,
+        )
+
+    def _find_character_boxes(self, binary, image_w, image_h, is_green_plate=False):
+        search_x = int(image_w * 0.04)
+        search_y = int(image_h * 0.18)
+        search_w = max(1, int(image_w * 0.92))
+        search_h = max(1, int(image_h * 0.68))
+        search_binary = binary[search_y : search_y + search_h, search_x : search_x + search_w]
+
+        contours, _ = cv2.findContours(search_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        boxes = []
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            x += search_x
+            y += search_y
+            area = w * h
+            aspect = w / float(h + 1e-6)
+            center_y = (y + h * 0.5) / image_h
+            fill_ratio = cv2.contourArea(contour) / float(area + 1e-6)
+
+            if not (image_h * 0.28 <= h <= image_h * 0.74):
+                continue
+            if not (image_w * 0.012 <= w <= image_w * 0.18):
+                continue
+            if not (0.06 <= aspect <= 1.10):
+                continue
+            if not (0.34 <= center_y <= 0.76):
+                continue
+            if fill_ratio < 0.12:
+                continue
+
+            boxes.append((x, y, w, h))
+
+        split_boxes = []
+        for box in sorted(boxes, key=lambda item: item[0]):
+            split_boxes.extend(self._split_wide_character_box(binary, box))
+
+        boxes = self._filter_character_artifacts(split_boxes, image_w, image_h)
+        boxes = self._merge_character_fragments(boxes)
+        if is_green_plate:
+            boxes = self._filter_green_plate_border_artifacts(boxes, image_w)
+        return sorted(boxes, key=lambda item: item[0])
+
+    def _score_character_boxes(self, boxes, image_w, image_h):
+        if not boxes:
+            return 0.0
+
+        count = len(boxes)
+        count_score = max(0.0, 1.0 - abs(count - 5.5) / 4.0)
+        heights = np.array([box[3] for box in boxes], dtype=np.float32)
+        centers_y = np.array([box[1] + box[3] * 0.5 for box in boxes], dtype=np.float32)
+        span = max(box[0] + box[2] for box in boxes) - min(box[0] for box in boxes)
+
+        height_score = max(0.0, 1.0 - float(np.std(heights)) / (float(np.median(heights)) + 1e-6))
+        align_score = max(0.0, 1.0 - float(np.std(centers_y)) / (image_h * 0.18))
+        span_score = self._score_similarity(span / float(image_w + 1e-6), 0.42, 0.34)
+
+        return (2.0 * count_score) + height_score + align_score + span_score
 
     def _crop_plate_surface(self, plate_roi):
         height, width = plate_roi.shape[:2]
@@ -310,6 +353,19 @@ class ROI:
             idx += 1
 
         return merged
+
+    def _filter_green_plate_border_artifacts(self, boxes, image_w):
+        if len(boxes) <= 5:
+            return boxes
+
+        edge_limit = image_w * 0.08
+        filtered = [
+            box
+            for box in boxes
+            if not (box[0] < edge_limit or box[0] + box[2] > image_w - edge_limit)
+        ]
+
+        return filtered if len(filtered) >= 5 else boxes
 
     def _save_segment_debug(
         self,
